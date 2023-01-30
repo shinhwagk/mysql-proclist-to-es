@@ -21,7 +21,7 @@ SELECT
   rows_examined,
   UNIX_TIMESTAMP(t.trx_started) trx_utime
 FROM information_schema.processlist p, information_schema.innodb_trx t
-WHERE p.id = t.trx_mysql_thread_id AND command NOT IN ('Sleep','Daemon','Binlog Dump') AND time_ms >= 10
+WHERE p.id = t.trx_mysql_thread_id AND command NOT IN ('Sleep','Daemon','Binlog Dump') AND time_ms >= 1000
 """
 
 
