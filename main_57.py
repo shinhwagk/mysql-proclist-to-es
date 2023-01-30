@@ -1,11 +1,11 @@
-from threading import Thread
+import logging
 import os
-import sys
 import time
 from datetime import datetime, timedelta
+from threading import Thread
 
 import mysql.connector
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch import Elasticsearch
 
 PROCESSLIST_SQL = """
 SELECT
@@ -40,10 +40,9 @@ class ProcesslistDB:
         self.query_addr()
 
     def query_addr(self):
-        with mysql.connector.connect(**self.dbconfig) as con:
-            with con.cursor() as cur:
-                cur.execute("select concat(@@hostname, ':', @@port)")
-                self.db_addr = cur.fetchone()[0]
+        with self.con.cursor() as cur:
+            cur.execute("select concat(@@hostname, ':', @@port)")
+            self.db_addr = cur.fetchone()[0]
 
     def query_processlist(self):
         with self.con.cursor() as cur:
@@ -53,10 +52,9 @@ class ProcesslistDB:
                 yield dict(zip(row_headers, result))
 
 
-class InnerTempDB:
-
-    def __init__(self, inner_dbconfig):
-        self.dbconfig = inner_dbconfig
+class TempDB:
+    def __init__(self, temp_dbconfig):
+        self.dbconfig = temp_dbconfig
         self.con = mysql.connector.connect(**self.dbconfig)
         self.con.autocommit = True
         self.create_table()
@@ -90,12 +88,10 @@ class InnerTempDB:
 
     @staticmethod
     def delete_process(dbconfig, db_addr: str, timestamp: datetime):
-        print("delete")
         with mysql.connector.connect(**dbconfig) as con:
             con.autocommit = True
             with con.cursor() as cur:
                 cur.execute("DELETE FROM temp.processlist WHERE db_addr = %s AND timestamp <= %s", (db_addr, timestamp))
-        print("delete down.")
 
     def check_process_exist(self, db_addr: str, timestamp: datetime):
         with self.con.cursor() as cur:
@@ -123,24 +119,23 @@ class InnerTempDB:
 
 if __name__ == "__main__":
     MYSQL_DSN = os.getenv('MYSQL_DSN')
-    INNER_DB_DSN = os.getenv('INNER_DB_DSN')
+    TEMP_DB_DSN = os.getenv('TEMP_DB_DSN')
     ELASTICSEARCH_ADDR = os.getenv('ELASTICSEARCH_ADDR')
 
-    es = Elasticsearch(f"http://{ELASTICSEARCH_ADDR}")
+    elastic = Elasticsearch(f"http://{ELASTICSEARCH_ADDR}")
 
-    innser_temp_db = InnerTempDB(parser_dsn(INNER_DB_DSN))
+    temp_db = TempDB(parser_dsn(TEMP_DB_DSN))
     processlist_db = ProcesslistDB(parser_dsn(MYSQL_DSN))
 
-    print(processlist_db.db_addr)
+    logging.basicConfig(
+        format=f'%(asctime)s %(levelname)s {processlist_db.db_addr} %(message)s',
+        level=logging.INFO,
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
     while True:
         _now = datetime.now()
-        _today = _now.strftime('%Y-%m-%d')
-        _es_index_today_name = f"mysql-processlist-{_today}"
 
-        print("query processlist", _now)
-
-        last_timestamp = datetime.now()
         ts = _now.replace(second=0, microsecond=0)
         ts_strftime = ts.strftime('%Y-%m-%dT%H:%M:00')
 
@@ -148,21 +143,20 @@ if __name__ == "__main__":
         for pl in processlist_db.query_processlist():
             pl['timestamp'] = ts_strftime
             pl['db_addr'] = processlist_db.db_addr
-            innser_temp_db.insert_process(pl)
+            temp_db.insert_process(pl)
             cnt += 1
-        print(f"processlit {cnt}")
-        cnt = 0
+        logging.info(f"processlist number: {cnt}")
 
+        cnt = 0
         last_ts = ts - timedelta(minutes=1)
-        if innser_temp_db.check_process_exist(processlist_db.db_addr, last_ts) >= 1:
-            for doc in innser_temp_db.query_process(processlist_db.db_addr, last_ts):
+        if temp_db.check_process_exist(processlist_db.db_addr, last_ts) >= 1:
+            es_index_today_name = f"mysql-processlist-{last_ts.strftime('%Y-%m-%d')}"
+            for doc in temp_db.query_process(processlist_db.db_addr, last_ts):
                 doc['@timestamp'] = doc['timestamp']
                 del doc['timestamp']
-                resp = es.index(index=_es_index_today_name, document=doc)
+                resp = elastic.index(index=es_index_today_name, document=doc)
                 cnt += 1
 
-            print(f"push es {cnt}")
-            print(f"{last_ts}")
-
-            # Thread(target=InnerTempDB.delete_process, args=(innser_temp_db.dbconfig, processlist_db.db_addr, last_ts)).run()
+            logging.info(f"push to elasticsearch number: {cnt}, timestamp: {last_ts.strftime('%Y-%m-%dT%H:%M:%S')}")
+            Thread(target=TempDB.delete_process, args=(temp_db.dbconfig, processlist_db.db_addr, last_ts)).run()
         time.sleep(1)
