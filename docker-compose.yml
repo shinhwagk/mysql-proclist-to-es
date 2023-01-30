@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  tempdb:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+
+  db1:
+    image: shinhwagk/pl2es:57-0.0.1
+    environment:
+      MON_DB_DSN: example
+      TEMP_DB_DSN: user/pass@host:3306
+      ELASTICSEARCH_ADDR: 1.1.1.1:9200
