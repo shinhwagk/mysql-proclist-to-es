@@ -93,11 +93,6 @@ class TempDB:
             with con.cursor() as cur:
                 cur.execute("DELETE FROM temp.processlist WHERE db_addr = %s AND timestamp <= %s", (db_addr, timestamp))
 
-    def check_process_exist(self, db_addr: str, timestamp: datetime):
-        with self.con.cursor() as cur:
-            cur.execute("SELECT count(*) FROM temp.processlist WHERE db_addr = %s AND timestamp <= %s", (db_addr, timestamp))
-            return cur.fetchone()[0]
-
     def insert_process(self, value):
         v = value
         with self.con.cursor() as cur:
@@ -133,6 +128,8 @@ if __name__ == "__main__":
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
+    checkpoint: datetime = datetime.now().replace(second=0, microsecond=0)
+
     while True:
         _now = datetime.now()
 
@@ -145,11 +142,12 @@ if __name__ == "__main__":
             pl['db_addr'] = processlist_db.db_addr
             temp_db.insert_process(pl)
             cnt += 1
-        logging.info(f"processlist number: {cnt}")
+        logging.info(f"processlist number: {cnt}, timestamp: {_now.strftime('%Y-%m-%dT%H:%M:%S')}")
 
         cnt = 0
-        last_ts = ts - timedelta(minutes=1)
-        if temp_db.check_process_exist(processlist_db.db_addr, last_ts) >= 1:
+
+        if checkpoint < ts:
+            last_ts = ts - timedelta(minutes=1)
             es_index_today_name = f"mysql-processlist-{last_ts.strftime('%Y-%m-%d')}"
             for doc in temp_db.query_process(processlist_db.db_addr, last_ts):
                 doc['@timestamp'] = doc['timestamp']
@@ -159,4 +157,6 @@ if __name__ == "__main__":
 
             logging.info(f"push to elasticsearch number: {cnt}, timestamp: {last_ts.strftime('%Y-%m-%dT%H:%M:%S')}")
             Thread(target=TempDB.delete_process, args=(temp_db.dbconfig, processlist_db.db_addr, last_ts)).run()
+
+            checkpoint = ts
         time.sleep(1)
