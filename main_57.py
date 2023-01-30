@@ -118,14 +118,14 @@ class TempDB:
 
 
 if __name__ == "__main__":
-    MYSQL_DSN = os.getenv('MYSQL_DSN')
+    MON_DB_DSN = os.getenv('MON_DB_DSN')
     TEMP_DB_DSN = os.getenv('TEMP_DB_DSN')
     ELASTICSEARCH_ADDR = os.getenv('ELASTICSEARCH_ADDR')
 
     elastic = Elasticsearch(f"http://{ELASTICSEARCH_ADDR}")
 
     temp_db = TempDB(parser_dsn(TEMP_DB_DSN))
-    processlist_db = ProcesslistDB(parser_dsn(MYSQL_DSN))
+    processlist_db = ProcesslistDB(parser_dsn(MON_DB_DSN))
 
     logging.basicConfig(
         format=f'%(asctime)s %(levelname)s {processlist_db.db_addr} %(message)s',
