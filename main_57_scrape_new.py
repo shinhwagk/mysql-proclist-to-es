@@ -36,6 +36,12 @@ class TempDB:
         self.dbconfig = temp_dbconfig
         self.con = mysql.connector.connect(**self.dbconfig)
         self.digest_con = mysql.connector.connect(**self.dbconfig)
+        self.create_table()
+
+    def create_table(self):
+        with self.con.cursor()as cur:
+            cur.execute("CREATE DATABASE IF NOT EXISTS digest")
+            self.digest_con = mysql.connector.connect(**self.dbconfig, database="digest")
 
     def query_sqltext_digest(self, sqltext: str):
         with self.digest_con.cursor()as cur:
@@ -70,13 +76,15 @@ if __name__ == "__main__":
     temp_db = TempDB(parser_dsn(TEMP_DB_DSN))
 
     while True:
+        cnt = 0
+
         ts = datetime.now()
         utcts = ts.astimezone(timezone.utc)
         utcts = utcts.replace(second=0, microsecond=0)
         # query_strts = query_ts.strftime('%Y-%m-%dT%H:%M:%S')
 
-        cnt = 0
         es_index_today_name = f"mysql-processlist-{ts.strftime('%Y-%m-%d')}"
+        
         for pl in processlist_db.query_processlist():
             pl['@timestamp'] = utcts.isoformat() + "Z"
             pl['db_addr'] = processlist_db.db_addr
