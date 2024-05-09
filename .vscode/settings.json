@@ -1,7 +1,8 @@
 {
     "editor.formatOnSave": true,
     "editor.insertSpaces": true,
-    "python.formatting.autopep8Args": [
-        "--max-line-length=140"
-    ]
+    "black-formatter.args": [
+        "--line-length",
+        "140"
+    ],
 }
