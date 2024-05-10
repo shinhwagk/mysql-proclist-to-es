@@ -54,7 +54,7 @@ class ProcesslistDB:
                 yield dict(zip(row_headers, result))
 
     def query_sqltext_digest(self, sqltext: str):
-        with self.digest_con.cursor() as cur:
+        with self.con.cursor() as cur:
             cur.execute(
                 "SELECT STATEMENT_DIGEST(%s), STATEMENT_DIGEST_TEXT(%s)",
                 (sqltext, sqltext),
